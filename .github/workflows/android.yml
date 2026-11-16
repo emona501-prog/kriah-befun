@@ -24,12 +24,17 @@ jobs:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
         run: |
-          if [ -z "$KEYSTORE_PASS" ]; then echo "::error::חסר הסוד KEYSTORE_PASS"; exit 1; fi
-          if [ -z "$KEYSTORE_B64" ]; then echo "::error::חסר הסוד KEYSTORE_B64"; exit 1; fi
-          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$RUNNER_TEMP/release.jks" || { echo "::error::KEYSTORE_B64 לא הועתק במלואו (פענוח נכשל)"; exit 1; }
           P="$(printf '%s' "$KEYSTORE_PASS" | tr -d ' \r\n\t')"
-          keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$P" >/dev/null || { echo "::error::הסיסמה KEYSTORE_PASS לא מתאימה למפתח"; exit 1; }
-          echo "::add-mask::$P"; echo "KS_PASS=$P" >> "$GITHUB_ENV"
+          if [ -z "$P" ]; then echo "::error::חסר הסוד KEYSTORE_PASS"; exit 1; fi
+          echo "::add-mask::$P"
+          K="$RUNNER_TEMP/release.jks"
+          # המפתח שמור בפרויקט מוצפן – נפתח רק עם הסיסמה מהסודות
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in android/kriah-release.jks.enc -out "$K" -pass pass:"$P" 2>/dev/null || true
+          if ! keytool -list -keystore "$K" -storepass "$P" >/dev/null 2>&1; then
+            printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$K" 2>/dev/null || true
+          fi
+          keytool -list -keystore "$K" -storepass "$P" >/dev/null 2>&1 || { echo "::error::הסיסמה KEYSTORE_PASS לא נכונה – צריך להדביק אותה שוב בסודות"; exit 1; }
+          echo "KS_PASS=$P" >> "$GITHUB_ENV"
           echo "::notice::מפתח החתימה תקין"
       - run: npm ci || npm install
       - name: גרסה
