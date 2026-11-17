@@ -2,6 +2,7 @@ package com.chaiapps.kriah;
 
 import android.Manifest;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -65,6 +66,12 @@ public class KriahSpeechPlugin extends Plugin {
         final String lang = call.getString("language", "he-IL");
         final int maxResults = call.getInt("maxResults", 5);
         final long silenceMs = call.getInt("silenceMs", 1800);
+        // מילים צפויות (למשל כל הצבעים בשלב) – עוזר למנוע לזהות מילים קצרות של ילדים (אנדרואיד 13+)
+        final ArrayList<String> hints = new ArrayList<>();
+        try {
+            JSArray h = call.getArray("hints");
+            if (h != null) for (int k = 0; k < h.length(); k++) hints.add(h.getString(k));
+        } catch (Exception e) { }
         final int id = ++sid;
         main.post(() -> {
             try {
@@ -80,7 +87,10 @@ public class KriahSpeechPlugin extends Plugin {
                 i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName());
                 i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
                 i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
-                i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 3000L);
+                i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L);
+                if (!hints.isEmpty() && Build.VERSION.SDK_INT >= 33) {
+                    i.putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, hints);
+                }
                 sr.startListening(i);
                 emitState(id, "listening");
             } catch (Exception e) {
