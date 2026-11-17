@@ -1,12 +1,15 @@
 package com.chaiapps.kriah;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognitionListener;
+import android.speech.RecognitionService;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 
@@ -21,6 +24,7 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * קוראים בכיף – זיהוי דיבור של אנדרואיד עצמו (במקום של הדפדפן).
@@ -66,6 +70,7 @@ public class KriahSpeechPlugin extends Plugin {
         final String lang = call.getString("language", "he-IL");
         final int maxResults = call.getInt("maxResults", 5);
         final long silenceMs = call.getInt("silenceMs", 1800);
+        final String engine = call.getString("engine", "google");
         // מילים צפויות (למשל כל הצבעים בשלב) – עוזר למנוע לזהות מילים קצרות של ילדים (אנדרואיד 13+)
         final ArrayList<String> hints = new ArrayList<>();
         try {
@@ -76,7 +81,8 @@ public class KriahSpeechPlugin extends Plugin {
         main.post(() -> {
             try {
                 destroy();
-                sr = SpeechRecognizer.createSpeechRecognizer(getContext());
+                ComponentName svc = "google".equals(engine) ? pickGoogle() : null;
+                sr = (svc != null) ? SpeechRecognizer.createSpeechRecognizer(getContext(), svc) : SpeechRecognizer.createSpeechRecognizer(getContext());
                 sr.setRecognitionListener(new Listener(id));
                 Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -117,6 +123,37 @@ public class KriahSpeechPlugin extends Plugin {
         sid++;
         main.post(() -> { destroy(); emitState(id, "stopped"); });
         call.resolve();
+    }
+
+    /** בסמסונג ברירת המחדל היא לפעמים מנוע של סמסונג – מעדיפים את המנוע של Google, שטוב יותר בעברית */
+    private ComponentName pickGoogle() {
+        try {
+            List<ResolveInfo> list = getContext().getPackageManager().queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
+            ComponentName other = null;
+            for (ResolveInfo ri : list) {
+                if (ri.serviceInfo == null) continue;
+                String pkg = ri.serviceInfo.packageName;
+                if ("com.google.android.googlequicksearchbox".equals(pkg)) return new ComponentName(pkg, ri.serviceInfo.name);
+                if (other == null && pkg.startsWith("com.google.android")) other = new ComponentName(pkg, ri.serviceInfo.name);
+            }
+            return other;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @PluginMethod
+    public void engines(PluginCall call) {
+        JSArray arr = new JSArray();
+        try {
+            List<ResolveInfo> list = getContext().getPackageManager().queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
+            for (ResolveInfo ri : list) if (ri.serviceInfo != null) arr.put(ri.serviceInfo.packageName);
+        } catch (Exception e) { }
+        JSObject r = new JSObject();
+        r.put("engines", arr);
+        ComponentName g = pickGoogle();
+        r.put("google", g != null ? g.getPackageName() : "");
+        call.resolve(r);
     }
 
     private void destroy() {
