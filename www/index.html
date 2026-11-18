@@ -217,7 +217,7 @@ function whatPre(L){if(L.id==='t1')return 'הצבע ה';if(L.id==='t8')return '�
 const WCOL=['#ff6b6b','#ffa41b','#ffd93d','#6bcb77','#4d96ff','#9b5de5','#f15bb5','#00bbf9'];
 
 let S=load();
-function defState(){return{ver:2,pin:'1234',settings:{goalType:'points',goalTarget:60,threshold:85,sessionsToPass:3,length:1,verify:'auto',paceMin:40,paceMax:120,sound:true,voice:true,engine:'google',autoListen:true,answerSec:6,qM:null,qF:null,markMode:'follow',guideWpm:0,prizes:['🍫 שוקולד','🍭 סוכריה','📺 10 דקות מסך','🎁 הפתעה','⭐ 10 נקודות בונוס','🛝 יציאה לגינה','🍦 גלידה','🎲 משחק עם אבא']},kids:[],books:[]};}
+function defState(){return{ver:2,pin:'1234',settings:{goalType:'points',goalTarget:60,threshold:85,sessionsToPass:3,length:1,verify:'auto',paceMin:40,paceMax:120,sound:true,voice:true,engine2:'default',autoListen:true,answerSec:6,qM:null,qF:null,markMode:'follow',guideWpm:0,prizes:['🍫 שוקולד','🍭 סוכריה','📺 10 דקות מסך','🎁 הפתעה','⭐ 10 נקודות בונוס','🛝 יציאה לגינה','🍦 גלידה','🎲 משחק עם אבא']},kids:[],books:[]};}
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings){const d=defState();s.settings=Object.assign(d.settings,s.settings);s.books=s.books||[];if(!s.ver){(s.kids||[]).forEach(k=>k.level=(k.level||0)+EARLY.length);s.ver=2;}return s;}}catch(e){}return defState();}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('⚠️ הזיכרון מלא – נסו תמונה קטנה יותר או מחקו ספר');}}
 const $=id=>document.getElementById(id);
@@ -487,12 +487,12 @@ let NSR_CUR=null,NSR_BOUND=false;
 const NSR_ERR={9:'not-allowed',6:'no-speech',7:'no-speech',1:'network',2:'network',4:'network',8:'aborted',5:'aborted',11:'aborted'};
 function bindNSR(){if(NSR_BOUND||!KS)return;NSR_BOUND=true;
  KS.addListener('result',ev=>{const c=NSR_CUR;if(!c||ev.sid!==c.sid)return;c._emit(ev.matches||[],!!ev.final);});
- KS.addListener('error',ev=>{const c=NSR_CUR;if(!c||ev.sid!==c.sid)return;c._err(NSR_ERR[ev.code]||'aborted');});
+ KS.addListener('error',ev=>{const c=NSR_CUR;if(!c||ev.sid!==c.sid)return;if([6,7,8].indexOf(ev.code)<0)toast('⚠️ מנוע הדיבור החזיר שגיאה (קוד '+ev.code+')');c._err(NSR_ERR[ev.code]||'aborted');});
  KS.addListener('rms',ev=>{const m=document.getElementById('mic');if(!m||!m.classList.contains('on'))return;const v=Math.max(0,Math.min(1,((ev.db||0)+2)/12));m.style.transform='scale('+(1+v*.22).toFixed(3)+')';m.style.filter='brightness('+(1+v*.35).toFixed(2)+')';});
  KS.addListener('state',ev=>{const c=NSR_CUR;if(!c||ev.sid!==c.sid)return;if(ev.state==='speech'&&P&&P.listening&&P.heard&&!P.heard.firstT)P.heard.firstT=performance.now();if(ev.state==='stopped')c._end();});}
 class NativeSR{constructor(){this.lang='he-IL';this.continuous=false;this.interimResults=true;this.maxAlternatives=5;this.sid=-2;this.finals=[];this.ended=false;}
  async start(){NSR_CUR=this;bindNSR();try{const p=await KS.ensurePermission();if(NSR_CUR!==this)return;if(!p||!p.granted){this._err('not-allowed');this._end();return;}
-  const r=await KS.start({language:this.lang,maxResults:this.maxAlternatives,silenceMs:this.short?1100:(this.continuous?2200:1400),hints:this.hints||[],engine:S.settings.engine||'google'});this.sid=r&&r.sid;if(NSR_CUR!==this){try{KS.cancel().catch(()=>{});}catch(e){}}}catch(e){this._err('aborted');this._end();}}
+  const r=await KS.start({language:this.lang,maxResults:this.maxAlternatives,silenceMs:this.short?1100:(this.continuous?2200:1400),hints:this.hints||[],engine:S.settings.engine2||'default'});this.sid=r&&r.sid;if(NSR_CUR!==this){try{KS.cancel().catch(()=>{});}catch(e){}}}catch(e){this._err('aborted');this._end();}}
  stop(){try{KS.stop().catch(()=>{});}catch(e){}}
  abort(){const was=NSR_CUR===this;this.ended=true;if(was){NSR_CUR=null;try{KS.cancel().catch(()=>{});}catch(e){}}}
  _emit(matches,fin){const alts=matches.map(t=>({transcript:t}));const res=this.finals.map(a=>{const x=a.slice();x.isFinal=true;return x;});const cur=alts.slice();cur.isFinal=fin;res.push(cur);if(fin)this.finals.push(alts);if(this.onresult)this.onresult({resultIndex:0,results:res});}
@@ -646,8 +646,8 @@ function settingsHTML(){const tabs=[['kids','👧 ילדים'],['goal','🎯 י�
   <div class="hint">בשלבי ההברות (1–3) ההורה תמיד מאשר, כי זיהוי דיבור לא מדייק בהברות בודדות.</div>
   <div class="row" style="margin-top:14px"><b>🎧 הקשבה אוטומטית</b><span class="sp"></span><div class="seg" style="width:140px"><button class="${s.autoListen?'on':''}" onclick="setS('autoListen',true)">פועל</button><button class="${!s.autoListen?'on':''}" onclick="setS('autoListen',false)">כבוי</button></div></div>
   <div class="hint">אחרי שאלה או מילה חדשה – המיקרופון נפתח לבד, בלי ללחוץ.</div>
-  ${NAT?`<label class="f">🧠 מנוע זיהוי הדיבור</label><div class="seg"><button class="${(s.engine||'google')==='google'?'on':''}" onclick="setS('engine','google')">Google (מומלץ)</button><button class="${s.engine==='default'?'on':''}" onclick="setS('engine','default')">ברירת המחדל בטלפון</button></div>
-  <div class="hint">בסמסונג ברירת המחדל היא לפעמים המנוע של סמסונג, שפחות טוב בעברית. אם השמיעה לא טובה – נסו להחליף.</div><div class="hint" id="engInfo"></div>`:''}
+  ${NAT?`<label class="f">🧠 מנוע זיהוי הדיבור</label><div class="seg"><button class="${s.engine2!=='google'?'on':''}" onclick="setS('engine2','default')">ברירת המחדל בטלפון</button><button class="${s.engine2==='google'?'on':''}" onclick="setS('engine2','google')">Google (ניסיוני)</button></div>
+  <div class="hint">אם השמיעה לא טובה אפשר לנסות את המנוע של Google. אם הוא לא עובד בטלפון – האפליקציה חוזרת לבד לברירת המחדל.</div><div class="hint" id="engInfo"></div>`:''}
   <label class="f">כמה שניות לתת לילד לענות</label><input class="in" type="number" min="3" max="20" value="${s.answerSec}" onchange="setS('answerSec',Math.min(20,Math.max(3,+this.value||6)))">
   <label class="f">אחוז הצלחה באימון כדי שייחשב "אימון טוב"</label><input class="in" type="number" min="50" max="100" value="${s.threshold}" onchange="setS('threshold',Math.min(100,Math.max(50,+this.value||85)))">
   <label class="f">כמה אימונים טובים ברצף כדי לעלות שלב</label><input class="in" type="number" min="1" max="10" value="${s.sessionsToPass}" onchange="setS('sessionsToPass',Math.min(10,Math.max(1,+this.value||3)))">

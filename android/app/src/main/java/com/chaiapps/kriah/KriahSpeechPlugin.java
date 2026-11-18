@@ -39,6 +39,7 @@ public class KriahSpeechPlugin extends Plugin {
     private int sid = 0;
     private final Handler main = new Handler(Looper.getMainLooper());
     private long lastRms = 0;
+    private boolean googleBroken = false;
 
     @PluginMethod
     public void available(PluginCall call) {
@@ -78,35 +79,42 @@ public class KriahSpeechPlugin extends Plugin {
             if (h != null) for (int k = 0; k < h.length(); k++) hints.add(h.getString(k));
         } catch (Exception e) { }
         final int id = ++sid;
-        main.post(() -> {
-            try {
-                destroy();
-                ComponentName svc = "google".equals(engine) ? pickGoogle() : null;
-                sr = (svc != null) ? SpeechRecognizer.createSpeechRecognizer(getContext(), svc) : SpeechRecognizer.createSpeechRecognizer(getContext());
-                sr.setRecognitionListener(new Listener(id));
-                Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-                i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
-                i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
-                i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, maxResults);
-                i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-                i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName());
-                i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
-                i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
-                i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L);
-                if (!hints.isEmpty() && Build.VERSION.SDK_INT >= 33) {
-                    i.putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, hints);
-                }
-                sr.startListening(i);
-                emitState(id, "listening");
-            } catch (Exception e) {
-                emitError(id, -1);
-                emitState(id, "stopped");
-            }
-        });
+        final boolean wantGoogle = "google".equals(engine) && !googleBroken;
+        main.post(() -> begin(id, wantGoogle, lang, maxResults, silenceMs, hints));
         JSObject r = new JSObject();
         r.put("sid", id);
         call.resolve(r);
+    }
+
+    /** פותח הקשבה. אם מנוע Google נכשל טכנית – חוזרים לבד למנוע ברירת המחדל של הטלפון. */
+    private void begin(int id, boolean useGoogle, String lang, int maxResults, long silenceMs, ArrayList<String> hints) {
+        try {
+            destroy();
+            ComponentName svc = useGoogle ? pickGoogle() : null;
+            sr = (svc != null) ? SpeechRecognizer.createSpeechRecognizer(getContext(), svc) : SpeechRecognizer.createSpeechRecognizer(getContext());
+            Listener l = new Listener(id);
+            if (svc != null) l.retry = () -> { googleBroken = true; begin(id, false, lang, maxResults, silenceMs, hints); };
+            sr.setRecognitionListener(l);
+            Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, maxResults);
+            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName());
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L);
+            if (!hints.isEmpty() && Build.VERSION.SDK_INT >= 33) {
+                i.putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, hints);
+            }
+            sr.startListening(i);
+            emitState(id, "listening");
+        } catch (Exception e) {
+            if (useGoogle) { googleBroken = true; begin(id, false, lang, maxResults, silenceMs, hints); return; }
+            emitError(id, -1);
+            emitState(id, "stopped");
+        }
     }
 
     @PluginMethod
@@ -153,6 +161,7 @@ public class KriahSpeechPlugin extends Plugin {
         r.put("engines", arr);
         ComponentName g = pickGoogle();
         r.put("google", g != null ? g.getPackageName() : "");
+        r.put("googleBroken", googleBroken);
         call.resolve(r);
     }
 
@@ -201,10 +210,12 @@ public class KriahSpeechPlugin extends Plugin {
 
     private class Listener implements RecognitionListener {
         private final int id;
+        Runnable retry = null;
+        private boolean got = false;
         Listener(int id) { this.id = id; }
 
         @Override public void onReadyForSpeech(Bundle params) { if (id == sid) emitState(id, "ready"); }
-        @Override public void onBeginningOfSpeech() { if (id == sid) emitState(id, "speech"); }
+        @Override public void onBeginningOfSpeech() { got = true; if (id == sid) emitState(id, "speech"); }
         @Override public void onRmsChanged(float rmsdB) {
             long now = System.currentTimeMillis();
             if (id != sid || now - lastRms < 120) return;
@@ -218,6 +229,12 @@ public class KriahSpeechPlugin extends Plugin {
         @Override public void onEndOfSpeech() { if (id == sid) emitState(id, "end"); }
         @Override public void onError(int error) {
             if (id != sid) return;
+            // 6=שקט, 7=לא זוהה, 8=עסוק – רגילים. כל שגיאה אחרת לפני שנשמע משהו = המנוע לא עובד → מנוע ברירת המחדל
+            if (retry != null && !got && error != 6 && error != 7 && error != 8) {
+                Runnable r = retry; retry = null;
+                main.post(r);
+                return;
+            }
             emitError(id, error);
             emitState(id, "stopped");
         }
