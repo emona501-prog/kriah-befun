@@ -886,6 +886,7 @@ function settingsHTML(){const tabs=[['kids','👧 ילדים'],['goal','🎯 י�
   <div class="card" id="recList"><div class="mut">טוען...</div></div><div class="hint">💡 ההקלטות נשמרות במכשיר הזה בלבד (לא נכללות בקובץ הגיבוי).</div>`;setTimeout(drawRecList,0);}
  else if(setTab==='more'){h+=`<div class="card"><label class="f">🔒 שינוי קוד הורים</label><div class="row"><input class="in" id="newPin" type="password" inputmode="numeric" placeholder="קוד חדש"><button class="btn sm" onclick="chgPin()">שמירה</button></div></div>
   ${NAT?`<div class="card"><div class="row"><b>📲 גרסה ${esc(APP_VER)}</b><span class="sp"></span>${STORE_BUILD?'':`<button class="btn sm" onclick="checkUpdate(true)">בדיקת עדכונים</button>`}</div></div>`:''}
+  <div class="card"><div class="row"><b>🔒 פרטיות</b><span class="sp"></span><a class="btn sm ghost" href="https://emona501-prog.github.io/mivtza-haalufim/kriah/privacy.html" target="_blank" rel="noopener">מדיניות פרטיות</a></div><div class="hint">כל המידע נשמר רק בטלפון הזה. אין פרסומות ואין איסוף מידע.</div></div>
   <div class="card"><b>💾 גיבוי</b><div class="hint">שמירת כל הנתונים (ילדים, תמונות, ספרים, נקודות) לקובץ – ושחזור ממנו.</div><div class="row" style="margin-top:10px"><button class="btn sm" onclick="exportData()">⬇️ ייצוא גיבוי</button><label class="btn sm ghost" style="margin:0">⬆️ שחזור<input type="file" accept=".json" style="display:none" onchange="importData(this)"></label></div></div>`;}
  return h+`<div class="foot">חי אפליקציות © · קוראים בכיף</div>`;}
 let recSrc='L0',MR=null,recKey=null;
