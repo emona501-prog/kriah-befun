@@ -57,11 +57,30 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log" || { M=$(grep -v "^\s*$" "$RUNNER_TEMP/gradle.log" | grep -B30 -A12 "What went wrong" | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g'); echo "::error title=gradle::$M"; exit 1; }
       - name: שם הקובץ
         run: cp android/app/build/outputs/apk/release/app-release.apk kriah-befun.apk
+      - name: גרסת חנות Google Play (AAB, בלי עדכון עצמי)
+        working-directory: android
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASS: ${{ env.KS_PASS }}
+          VERSION_NAME: ${{ steps.ver.outputs.v }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          # מדיניות גוגל: אפליקציה מהחנות לא מעדכנת את עצמה ולא מבקשת הרשאת התקנה
+          sed -i '/REQUEST_INSTALL_PACKAGES/d' app/src/main/AndroidManifest.xml
+          sed -i '/registerPlugin(UpdaterPlugin.class);/d' app/src/main/java/com/chaiapps/kriah/MainActivity.java
+          rm -f app/src/main/java/com/chaiapps/kriah/UpdaterPlugin.java
+          sed -i 's/const STORE_BUILD=false;/const STORE_BUILD=true;/' app/src/main/assets/public/index.html
+          grep -q "const STORE_BUILD=true;" app/src/main/assets/public/index.html || { echo "::error::STORE_BUILD flag not found"; exit 1; }
+          set -o pipefail
+          ./gradlew bundleRelease --no-daemon 2>&1 | tail -30
+          cp app/build/outputs/bundle/release/app-release.aab ../kriah-befun-store.aab
       - name: פרסום בעמוד ההורדות
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
           name: קוראים בכיף ${{ steps.ver.outputs.v }}
           body_path: RELEASE_NOTES.md
-          files: kriah-befun.apk
+          files: |
+            kriah-befun.apk
+            kriah-befun-store.aab
           make_latest: true
